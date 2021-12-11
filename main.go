@@ -47,15 +47,15 @@ func init() {
 func main() {
 	t := time.Now()
 
-	fmt.Println("Sentiment Analysis App")
-
 	// 1. Read
-	s = ReadSourceReadonly("twit_translated_to_id.csv", 1)
+	s = ReadSourceReadonly("twit_translated_to_id.csv", 0)
 	negativeWords = ReadSourceReadonly("negative.txt", 0)
 	positiveWords = ReadSourceReadonly("positive.txt", 0)
 
 	classifier.Learn(positiveWords, Good)
 	classifier.Learn(negativeWords, Bad)
+
+	s = removeDuplicateStr(s)
 
 	for i := range s {
 		// stem
@@ -64,6 +64,10 @@ func main() {
 		// tokenize
 		result := []string{}
 		for _, word := range sastrawi.Tokenize(s[i]) {
+
+			// check slang
+			word = replaceSlang(word)
+
 			if stopwords.Contains(word) || queryWords.Contains(word) {
 				continue
 			}
@@ -73,10 +77,6 @@ func main() {
 		s[i] = strings.Join(result, " ")
 	}
 
-	s = removeDuplicateStr(s)
-	// fmt.Println(len(s))
-
-	// fmt.Println(s[1])
 	mapPolarity := make(map[int]int)
 
 	var positiveWords, negativeWords []string
