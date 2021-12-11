@@ -11,10 +11,11 @@ import (
 )
 
 var (
-	stopwords  sastrawi.Dictionary
-	dictionary sastrawi.Dictionary
-	queryWords sastrawi.Dictionary
-	stemmer    sastrawi.Stemmer
+	stopwords           sastrawi.Dictionary
+	dictionary          sastrawi.Dictionary
+	queryWords          sastrawi.Dictionary
+	additionalStopWords sastrawi.Dictionary
+	stemmer             sastrawi.Stemmer
 
 	negativeWords []string
 	positiveWords []string
@@ -28,7 +29,8 @@ const (
 )
 
 var (
-	dictionaryQueryWords = []string{"goto", "ipo", "gojek", "tokopedia", "tokped", "toped"}
+	dictionaryQueryWords          = []string{"goto", "ipo", "gojek", "tokopedia", "tokped", "toped"}
+	dictionaryAdditionalStopWords = []string{}
 )
 
 func init() {
@@ -37,6 +39,7 @@ func init() {
 	dictionary = sastrawi.DefaultDictionary()
 	stemmer = sastrawi.NewStemmer(dictionary)
 	queryWords = sastrawi.NewDictionary(dictionaryQueryWords...)
+	additionalStopWords = sastrawi.NewDictionary(dictionaryAdditionalStopWords...)
 
 	// if 0 then Bad
 	// if 1 then Good
@@ -53,6 +56,7 @@ func main() {
 	s = ReadSourceReadonly("twit_translated_to_id.csv", 1)
 	negativeWords = ReadSourceReadonly("negative.txt", 0)
 	positiveWords = ReadSourceReadonly("positive.txt", 0)
+	slangWords := ReadSourceJSON("slang_words.json")
 
 	classifier.Learn(positiveWords, Good)
 	classifier.Learn(negativeWords, Bad)
@@ -64,9 +68,16 @@ func main() {
 		// tokenize
 		result := []string{}
 		for _, word := range sastrawi.Tokenize(s[i]) {
-			if stopwords.Contains(word) || queryWords.Contains(word) {
+			// convert slang words
+			if realWord, ok := slangWords[word]; ok {
+				word = realWord
+			}
+
+			// remove stop words and query words
+			if stopwords.Contains(word) || queryWords.Contains(word) || additionalStopWords.Contains(word) {
 				continue
 			}
+
 			result = append(result, word)
 		}
 
@@ -97,6 +108,7 @@ func main() {
 			negativeWords = append(negativeWords, words...)
 		}
 
+		// fmt.Println("sentence: ", s[i], " | likely: ", likely)
 		mapPolarity[likely]++
 	}
 

@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 )
@@ -33,4 +35,24 @@ func ReadSourceReadonly(filename string, idx int) []string {
 	}
 
 	return result
+}
+
+func ReadSourceJSON(filename string) map[string]string {
+	file, err := os.Open(filename)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	defer file.Close()
+
+	byteValue, _ := ioutil.ReadAll(file)
+
+	mapWords := make(map[string]string)
+
+	err = json.Unmarshal(byteValue, &mapWords)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	return mapWords
 }
