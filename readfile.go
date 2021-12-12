@@ -24,11 +24,6 @@ func ReadSourceReadonly(filename string, idx int) []string {
 
 	result := []string{}
 	for i := range records {
-
-		// skip header
-		if i == 0 {
-			continue
-		}
 		result = append(result, records[i][idx])
 	}
 

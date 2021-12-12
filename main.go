@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/csv"
 	"fmt"
+	"log"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -18,8 +21,14 @@ var (
 
 	negativeWords []string
 	positiveWords []string
-	s             []string
-	classifier    *bayesian.Classifier
+
+	// data test, scrapped from twitter
+	s      []string
+	sRaw   []string
+	date   []string
+	result []int
+
+	classifier *bayesian.Classifier
 )
 
 const (
@@ -48,14 +57,21 @@ func main() {
 	t := time.Now()
 
 	// 1. Read
-	s = ReadSourceReadonly("twit_translated_to_id.csv", 0)
-	negativeWords = ReadSourceReadonly("negative.txt", 0)
-	positiveWords = ReadSourceReadonly("positive.txt", 0)
+	s = ReadSourceReadonly("twit_translated_to_id_date.csv", 1)
+	date = ReadSourceReadonly("twit_translated_to_id_date.csv", 0)
+
+	// clone sRaw from s
+	for i := range s {
+		sRaw = append(sRaw, s[i])
+	}
+
+	result = make([]int, len(s))
+
+	negativeWords = ReadSourceReadonly("negative_mk2.txt", 0)
+	positiveWords = ReadSourceReadonly("positive_mk2.txt", 0)
 
 	classifier.Learn(positiveWords, Good)
 	classifier.Learn(negativeWords, Bad)
-
-	s = removeDuplicateStr(s)
 
 	for i := range s {
 		// stem
@@ -89,7 +105,8 @@ func main() {
 		}
 
 		scores, likely, _ := classifier.LogScores(words)
-		fmt.Println(scores, " ", likely)
+		_ = scores
+		// fmt.Println(scores, " ", likely)
 
 		if likely == 1 {
 			positiveWords = append(positiveWords, words...)
@@ -98,13 +115,38 @@ func main() {
 		}
 
 		mapPolarity[likely]++
+
+		result[i] = likely
 	}
 
 	fmt.Println("time passed : ", time.Since(t).Milliseconds(), " ms")
 
-	for k, v := range mapPolarity {
-		fmt.Println("key = ", k, " | ", v)
+	csvResult := [][]string{}
+
+	for i := range s {
+		resultStr := "Negative"
+		if result[i] > 0 {
+			resultStr = "Positive"
+		}
+
+		// fmt.Printf("%s | %s | %s\n", date[i], resultStr, sRaw[i])
+		r := []string{date[i], resultStr, sRaw[i]}
+		csvResult = append(csvResult, r)
 	}
+
+	//// Write to CSV
+	csvFile, err := os.Create("twit_result_sentiment.csv")
+	if err != nil {
+		log.Fatalf("failed creating file: %s", err)
+	}
+	defer csvFile.Close()
+
+	csvwriter := csv.NewWriter(csvFile)
+
+	for _, row := range csvResult {
+		_ = csvwriter.Write(row)
+	}
+	csvwriter.Flush()
 
 	mapPositiveWords, mapNegativeWords := countPositiveAndNegativeWords(positiveWords, negativeWords)
 
