@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/csv"
 	"fmt"
+	"log"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -31,6 +34,12 @@ var (
 
 	NegativeWords []string
 	PositiveWords []string
+
+	// data test, scrapped from twitter
+	s      []string
+	sRaw   []string
+	date   []string
+	result []int
 
 	classifier *bayesian.Classifier
 )
