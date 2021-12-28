@@ -29,3 +29,26 @@ func ReadSourceReadonly(filename string, idx int) []string {
 
 	return result
 }
+
+func ReadTwitterData(filename string) (result []TwitterData) {
+	f, err := os.Open(fmt.Sprint(filename))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	csvReader := csv.NewReader(f)
+	records, err := csvReader.ReadAll()
+	if err != nil {
+		fmt.Println("Unable to parse file as CSV for "+filename, err)
+	}
+
+	for i := range records {
+		result = append(result, TwitterData{
+			Tweet: records[i][1],
+			Date:  records[i][0],
+		})
+	}
+
+	return result
+}

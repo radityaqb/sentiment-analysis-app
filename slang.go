@@ -24,7 +24,7 @@ func replaceSlang(s string) string {
 }
 
 func initSlang() {
-	content, err := ioutil.ReadFile("slang.txt")
+	content, err := ioutil.ReadFile("dictionary/slang.txt")
 	if err != nil {
 		log.Fatal(err)
 	}
