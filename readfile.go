@@ -2,9 +2,7 @@ package main
 
 import (
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 )
@@ -37,22 +35,25 @@ func ReadSourceReadonly(filename string, idx int) []string {
 	return result
 }
 
-func ReadSourceJSON(filename string) map[string]string {
-	file, err := os.Open(filename)
+func ReadTwitterData(filename string) (result []TwitterData) {
+	f, err := os.Open(fmt.Sprint(filename))
 	if err != nil {
-		fmt.Println(err)
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	csvReader := csv.NewReader(f)
+	records, err := csvReader.ReadAll()
+	if err != nil {
+		fmt.Println("Unable to parse file as CSV for "+filename, err)
 	}
 
-	defer file.Close()
-
-	byteValue, _ := ioutil.ReadAll(file)
-
-	mapWords := make(map[string]string)
-
-	err = json.Unmarshal(byteValue, &mapWords)
-	if err != nil {
-		fmt.Println(err)
+	for i := range records {
+		result = append(result, TwitterData{
+			Tweet: records[i][1],
+			Date:  records[i][0],
+		})
 	}
 
-	return mapWords
+	return result
 }

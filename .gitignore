@@ -1,4 +1,3 @@
-fetch_result
-positive.txt
-negative.txt
-slang_words.json
+vendor/
+sentiment-analysis-app
+.DS_Store

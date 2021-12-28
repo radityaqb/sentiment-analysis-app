@@ -10,6 +10,18 @@ import (
 	"github.com/jbrukh/bayesian"
 )
 
+type WordAppearances struct {
+	Key   string
+	Value int
+}
+
+type TwitterData struct {
+	Tweet                  string
+	Date                   string
+	Sentiment              string
+	TweetAfterPreprocessed string
+}
+
 var (
 	stopwords           sastrawi.Dictionary
 	dictionary          sastrawi.Dictionary
@@ -17,10 +29,10 @@ var (
 	additionalStopWords sastrawi.Dictionary
 	stemmer             sastrawi.Stemmer
 
-	negativeWords []string
-	positiveWords []string
-	s             []string
-	classifier    *bayesian.Classifier
+	NegativeWords []string
+	PositiveWords []string
+
+	classifier *bayesian.Classifier
 )
 
 const (
@@ -29,17 +41,19 @@ const (
 )
 
 var (
-	dictionaryQueryWords          = []string{"goto", "ipo", "gojek", "tokopedia", "tokped", "toped"}
-	dictionaryAdditionalStopWords = []string{}
+	queryWordsList = []string{"goto", "ipo", "gojek", "tokopedia", "tokped", "toped"}
 )
 
 func init() {
+	additionalStopWordList := ReadSourceReadonly("dictionary/stopwords.txt", 0)
 
 	stopwords = sastrawi.DefaultStopword()
 	dictionary = sastrawi.DefaultDictionary()
 	stemmer = sastrawi.NewStemmer(dictionary)
-	queryWords = sastrawi.NewDictionary(dictionaryQueryWords...)
-	additionalStopWords = sastrawi.NewDictionary(dictionaryAdditionalStopWords...)
+	queryWords = sastrawi.NewDictionary(queryWordsList...)
+	additionalStopWords = sastrawi.NewDictionary(additionalStopWordList...)
+
+	proceedDataTraining()
 
 	// if 0 then Bad
 	// if 1 then Good
@@ -48,97 +62,136 @@ func init() {
 }
 
 func main() {
+
 	t := time.Now()
 
-	fmt.Println("Sentiment Analysis App")
+	// read tweet data
+	tweetData := ReadTwitterData("tweets/test_data.csv")
+	fmt.Println("Tweets: ", len(tweetData))
 
-	// 1. Read
-	s = ReadSourceReadonly("twit_translated_to_id.csv", 1)
-	negativeWords = ReadSourceReadonly("negative.txt", 0)
-	positiveWords = ReadSourceReadonly("positive.txt", 0)
-	slangWords := ReadSourceJSON("slang_words.json")
+	tweetData = removeDuplicateTweet(tweetData)
+	fmt.Println("Tweets removed duplicate: ", len(tweetData))
+
+	NegativeWords = append(NegativeWords, ReadSourceReadonly("dictionary/negative.txt", 0)...)
+	PositiveWords = append(PositiveWords, ReadSourceReadonly("dictionary/positive.txt", 0)...)
+
+	// do sentiment analysis
+	result, positiveWordsSentiment, negativeWordsSentiment := analyzeSentiment(tweetData, PositiveWords, NegativeWords)
+
+	// write sentiment result
+	writeSentimentResult("result/twit_result_sentiment.csv", result)
+
+	fmt.Println("time passed : ", time.Since(t).Milliseconds(), " ms")
+
+	// get mot appearance words
+	mapPositiveWords, mapNegativeWords := countPositiveAndNegativeWords(positiveWordsSentiment, negativeWordsSentiment)
+	writeMostAppearanceWords("result/most_appearances_positive.csv", getMostAppearancesWords(100, mapPositiveWords))
+	writeMostAppearanceWords("result/most_appearances_negative.csv", getMostAppearancesWords(100, mapNegativeWords))
+
+	// kfold cross validation analysis
+	kFoldCrossValidation(10, result)
+
+}
+
+func proceedDataTraining() {
+	trainingDataStr := ReadSourceReadonly("tweets/training_data.csv", 1)
+	trainingDataSentiment := ReadSourceReadonly("tweets/training_data.csv", 0)
+
+	for i := range trainingDataStr {
+		trainingDataStr[i] = preProcessString(trainingDataStr[i])
+	}
+
+	for i := range trainingDataStr {
+		if trainingDataSentiment[i] == "Positive" {
+			words := strings.Split(trainingDataStr[i], " ")
+			PositiveWords = append(PositiveWords, words...)
+		} else if trainingDataSentiment[i] == "Negative" {
+			words := strings.Split(trainingDataStr[i], " ")
+			NegativeWords = append(NegativeWords, words...)
+		}
+	}
+}
+
+func removeDuplicateTweet(data []TwitterData) []TwitterData {
+	mapStr := make(map[string]bool)
+	listTweetData := []TwitterData{}
+
+	for _, item := range data {
+		if _, value := mapStr[item.Tweet]; !value {
+			mapStr[item.Tweet] = true
+			listTweetData = append(listTweetData, item)
+		}
+	}
+
+	return listTweetData
+}
+
+func analyzeSentiment(tweetData []TwitterData, positiveWords, negativeWords []string) ([]TwitterData, []string, []string) {
+	var (
+		positiveWordsSentiment, negativeWordsSentiment []string
+		positiveSentiment, negativeSentiment           int
+	)
 
 	classifier.Learn(positiveWords, Good)
 	classifier.Learn(negativeWords, Bad)
 
-	for i := range s {
-		// stem
-		s[i] = stemmer.Stem(s[i])
+	result := make([]TwitterData, len(tweetData))
 
-		// tokenize
-		result := []string{}
-		for _, word := range sastrawi.Tokenize(s[i]) {
-			// convert slang words
-			if realWord, ok := slangWords[word]; ok {
-				word = realWord
-			}
-
-			// remove stop words and query words
-			if stopwords.Contains(word) || queryWords.Contains(word) || additionalStopWords.Contains(word) {
-				continue
-			}
-
-			result = append(result, word)
-		}
-
-		s[i] = strings.Join(result, " ")
+	for i := range tweetData {
+		result[i].Date = tweetData[i].Date
+		result[i].Tweet = tweetData[i].Tweet
+		result[i].TweetAfterPreprocessed = preProcessString(tweetData[i].Tweet)
 	}
 
-	s = removeDuplicateStr(s)
-	// fmt.Println(len(s))
+	for i := range tweetData {
 
-	// fmt.Println(s[1])
-	mapPolarity := make(map[int]int)
-
-	var positiveWords, negativeWords []string
-
-	for i := range s {
-
-		words := strings.Split(s[i], " ")
+		words := strings.Split(result[i].TweetAfterPreprocessed, " ")
 		for i := range words {
 			words[i] = strings.TrimSpace(words[i])
 		}
 
 		scores, likely, _ := classifier.LogScores(words)
-		fmt.Println(scores, " ", likely)
+		_ = scores
 
 		if likely == 1 {
-			positiveWords = append(positiveWords, words...)
+			positiveWordsSentiment = append(positiveWordsSentiment, words...)
+			result[i].Sentiment = "Positive"
+			positiveSentiment++
 		} else {
-			negativeWords = append(negativeWords, words...)
+			negativeWordsSentiment = append(negativeWordsSentiment, words...)
+			result[i].Sentiment = "Negative"
+			negativeSentiment++
+		}
+	}
+
+	fmt.Println("Positive Sentiment: ", positiveSentiment)
+	fmt.Println("Negative Sentiment: ", negativeSentiment)
+
+	return result, positiveWordsSentiment, negativeWordsSentiment
+}
+
+func preProcessString(s string) string {
+	result := []string{}
+
+	// stem
+	s = stemmer.Stem(s)
+
+	// tokenize
+	for _, word := range sastrawi.Tokenize(s) {
+
+		// check slang
+		word = replaceSlang(word)
+
+		if stopwords.Contains(word) {
+			continue
 		}
 
-		// fmt.Println("sentence: ", s[i], " | likely: ", likely)
-		mapPolarity[likely]++
+		result = append(result, word)
 	}
 
-	fmt.Println("time passed : ", time.Since(t).Milliseconds(), " ms")
+	s = strings.Join(result, " ")
 
-	for k, v := range mapPolarity {
-		fmt.Println("key = ", k, " | ", v)
-	}
-
-	mapPositiveWords, mapNegativeWords := countPositiveAndNegativeWords(positiveWords, negativeWords)
-
-	mostAppearancesPositive := getMostAppearancesWords(10, mapPositiveWords)
-	mostAppearancesNegative := getMostAppearancesWords(10, mapNegativeWords)
-
-	fmt.Println("mostAppearancesPositive: ", mostAppearancesPositive)
-	fmt.Println("mostAppearancesNegative: ", mostAppearancesNegative)
-
-	// 	// probs, likely, _ := classifier.ProbScores(
-	// 	// 	strings.Split(s[i], " "),
-	// 	// )
-
-	// 	fmt.Println(scores, " ", likely)
-	// }
-
-	// scores, likely, _ := classifier.LogScores(
-	// 	[]string{"terlalu murah",
-	// 		"terlalu tinggi",
-	// 		"terlambat"},
-	// )
-	// fmt.Println(scores, " ", likely)
+	return s
 }
 
 func countPositiveAndNegativeWords(positiveWords, negativeWords []string) (map[string]int, map[string]int) {
@@ -166,11 +219,7 @@ func countPositiveAndNegativeWords(positiveWords, negativeWords []string) (map[s
 	return mapPositiveWords, mapNegativeWords
 }
 
-func getMostAppearancesWords(rank int, mapWordFrequencies map[string]int) (mapMostAppearancesWord []string) {
-	type WordAppearances struct {
-		Key   string
-		Value int
-	}
+func getMostAppearancesWords(rank int, mapWordFrequencies map[string]int) (mapMostAppearancesWord []WordAppearances) {
 
 	var wordFrequencies []WordAppearances
 	for k, v := range mapWordFrequencies {
@@ -182,11 +231,11 @@ func getMostAppearancesWords(rank int, mapWordFrequencies map[string]int) (mapMo
 	})
 
 	for i := range wordFrequencies {
-		if i == 10 {
+		if i == rank {
 			break
 		}
 
-		mapMostAppearancesWord = append(mapMostAppearancesWord, fmt.Sprintf("%s|%d", wordFrequencies[i].Key, wordFrequencies[i].Value))
+		mapMostAppearancesWord = append(mapMostAppearancesWord, wordFrequencies[i])
 	}
 
 	return mapMostAppearancesWord
